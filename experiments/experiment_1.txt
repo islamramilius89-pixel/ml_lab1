@@ -1,0 +1,6 @@
+Модель: RandomForestClassifier
+Параметры: n_estimators=50, max_depth=3
+Данные: penguins_size.csv, 334 строки после очистки
+Точность на валидации: ~0.98 (оценочно)
+Признаки: culmen_length_mm, culmen_depth_mm, flipper_length_mm, body_mass_g
+Цель: species (Adelie, Chinstrap, Gentoo)

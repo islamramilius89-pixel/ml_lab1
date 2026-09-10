@@ -1,5 +1,8 @@
 pandas
 scikit-learn
 fastapi
-uvicorn
+uvicorn[standard]
 joblib
+pytest
+pytest-cov
+requests

@@ -1,0 +1,34 @@
+{
+  "scenarios": [
+    {
+      "name": "root",
+      "method": "GET",
+      "path": "/",
+      "expect_status": 200
+    },
+    {
+      "name": "docs",
+      "method": "GET",
+      "path": "/docs",
+      "expect_status": 200
+    },
+    {
+      "name": "predict_adelie",
+      "method": "POST",
+      "path": "/predict?culmen_length_mm=39.1&culmen_depth_mm=18.7&flipper_length_mm=181.0&body_mass_g=3750.0",
+      "expect_status": 200
+    },
+    {
+      "name": "predict_gentoo",
+      "method": "POST",
+      "path": "/predict?culmen_length_mm=46.1&culmen_depth_mm=13.2&flipper_length_mm=211.0&body_mass_g=4500.0",
+      "expect_status": 200
+    },
+    {
+      "name": "predict_bad_missing_param",
+      "method": "POST",
+      "path": "/predict?culmen_length_mm=39.1",
+      "expect_status": 422
+    }
+  ]
+}

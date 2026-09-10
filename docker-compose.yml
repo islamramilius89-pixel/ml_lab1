@@ -1,0 +1,16 @@
+services:
+  penguin-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: islamram89/penguin-api:v1
+    container_name: penguin-api
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')" ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

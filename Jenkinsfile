@@ -27,7 +27,7 @@ pipeline {
             steps {
                 bat 'docker version'
                 bat 'docker compose version'
-                bat 'py --version'
+                bat 'python --version'
             }
         }
 
@@ -35,7 +35,7 @@ pipeline {
             steps {
                 bat '''
                     if exist .venv rmdir /s /q .venv
-                    py -3.11 -m venv .venv
+                    python -m venv .venv
                     call .venv\\Scripts\\activate.bat
                     python -m pip install --upgrade pip
                     pip install -r requirements.txt
@@ -149,7 +149,7 @@ pipeline {
                 bat 'docker compose down -v --remove-orphans'
             }
 
-            bat 'if exist .venv rmdir /s /q .venv'
+            bat 'if exist .venv rmdir /s /q .venv >nul 2>&1 || exit /b 0'
         }
     }
 }

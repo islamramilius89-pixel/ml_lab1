@@ -13,6 +13,7 @@ pipeline {
         APP_HOST_PORT = '8001'
         RUN_LIVE_TESTS = '1'
         BASE_URL = 'http://localhost:8001'
+        PYTHON_EXE = 'C:/Users/111/AppData/Local/Programs/Python/Python313/python.exe'
         DOCKER_IMAGE = 'YOUR_DOCKER_USERNAME/penguin-api'
     }
 
@@ -27,7 +28,7 @@ pipeline {
             steps {
                 bat 'docker version'
                 bat 'docker compose version'
-                bat 'python --version'
+                bat '"%PYTHON_EXE%" --version'
             }
         }
 
@@ -35,7 +36,7 @@ pipeline {
             steps {
                 bat '''
                     if exist .venv rmdir /s /q .venv
-                    python -m venv .venv
+                    "%PYTHON_EXE%" -m venv .venv
                     call .venv\\Scripts\\activate.bat
                     python -m pip install --upgrade pip
                     pip install -r requirements.txt

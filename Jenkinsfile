@@ -61,9 +61,24 @@ pipeline {
                     string(credentialsId: 'lab-db-name', variable: 'DB_NAME')
                 ]) {
                     bat '''
-                        docker compose down -v --remove-orphans
-                        docker compose up --build -d
-                        docker compose ps
+                        setlocal
+                        if "%DB_USER%"=="" set "DB_USER=jenkins"
+                        if "%DB_PASSWORD%"=="" set "DB_PASSWORD=jenkins_pass"
+                        if "%DB_NAME%"=="" set "DB_NAME=predictions_db"
+
+                        > .jenkins.env (
+                            echo DB_USER=%DB_USER%
+                            echo DB_PASSWORD=%DB_PASSWORD%
+                            echo DB_NAME=%DB_NAME%
+                            echo DB_PORT=%DB_PORT%
+                            echo DB_CONTAINER_HOST=%DB_CONTAINER_HOST%
+                            echo APP_PORT=%APP_PORT%
+                            echo APP_HOST_PORT=%APP_HOST_PORT%
+                        )
+
+                        docker compose --env-file .jenkins.env down -v --remove-orphans
+                        docker compose --env-file .jenkins.env up --build -d
+                        docker compose --env-file .jenkins.env ps
                     '''
                 }
             }
@@ -90,8 +105,8 @@ pipeline {
                         Start-Sleep -Seconds 2
                     }
 
-                    docker compose ps
-                    docker compose logs app --tail 100
+                    docker compose --env-file .jenkins.env ps
+                    docker compose --env-file .jenkins.env logs app --tail 100
                     throw "API did not become healthy"
                 '''
             }

@@ -48,7 +48,7 @@ pipeline {
             steps {
                 bat '''
                     call .venv\\Scripts\\activate.bat
-                    pytest tests\\unit\\
+                    python -m pytest tests\\unit\\
                 '''
             }
         }

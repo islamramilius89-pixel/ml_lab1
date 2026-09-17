@@ -1,0 +1,11 @@
+pandas
+scikit-learn==1.9.1
+fastapi
+uvicorn
+joblib
+psycopg2-binary
+hvac
+python-dotenv
+pytest
+httpx
+pytest-asyncio

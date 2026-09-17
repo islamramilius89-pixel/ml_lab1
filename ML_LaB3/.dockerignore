@@ -1,0 +1,13 @@
+.env
+.git
+.gitignore
+.venv
+venv
+__pycache__
+*.pyc
+.jenkins.env
+tests
+data
+experiments
+*.dvc
+Лабораторная работа 2 (весна 2026) (4).pdf

@@ -1,0 +1,71 @@
+services:
+  vault:
+    build:
+      context: ./vault
+    container_name: vault
+    cap_add:
+      - IPC_LOCK
+    environment:
+      VAULT_TOKEN: ${VAULT_TOKEN:-root-token}
+      VAULT_SECRET_PATH: ${VAULT_SECRET_PATH:-ml-lab3/db}
+      VAULT_KV_MOUNT: ${VAULT_KV_MOUNT:-secret}
+      POSTGRES_USER: ${POSTGRES_USER:-vault_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vault_password}
+      POSTGRES_DB: ${POSTGRES_DB:-predictions_db}
+    ports:
+      - "${VAULT_PORT:-8200}:8200"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "sh", "-c", "VAULT_ADDR=http://127.0.0.1:8200 vault status >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  postgres:
+    image: postgres:15
+    container_name: postgres_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vault_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vault_password}
+      POSTGRES_DB: ${POSTGRES_DB:-predictions_db}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    depends_on:
+      vault:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    container_name: penguin_api
+    ports:
+      - "${APP_HOST_PORT:-8000}:${APP_PORT:-8000}"
+    depends_on:
+      vault:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: ${DB_CONTAINER_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      VAULT_ADDR: ${VAULT_ADDR:-http://vault:8200}
+      VAULT_TOKEN: ${VAULT_TOKEN:-root-token}
+      VAULT_SECRET_PATH: ${VAULT_SECRET_PATH:-ml-lab3/db}
+      VAULT_KV_MOUNT: ${VAULT_KV_MOUNT:-secret}
+      APP_PORT: ${APP_PORT:-8000}
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  postgres_data:

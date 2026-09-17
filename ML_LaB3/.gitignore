@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.venv/
+venv/
+.jenkins.env
+docker-compose.override.yml
+experiments/
+.DS_Store

@@ -5,6 +5,7 @@ __pycache__/
 .env
 .venv/
 venv/
+.jenkins.env
 docker-compose.override.yml
 experiments/
 .DS_Store

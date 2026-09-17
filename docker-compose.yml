@@ -1,18 +1,75 @@
 services:
+  vault:
+    build:
+      context: ./vault
+    container_name: vault
+    cap_add:
+      - IPC_LOCK
+    environment:
+      VAULT_TOKEN: ${VAULT_TOKEN:-root-token}
+      VAULT_SECRET_PATH: ${VAULT_SECRET_PATH:-ml-lab4/db}
+      VAULT_KV_MOUNT: ${VAULT_KV_MOUNT:-secret}
+      POSTGRES_USER: ${POSTGRES_USER:-vault_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vault_password}
+      POSTGRES_DB: ${POSTGRES_DB:-predictions_db}
+    ports:
+      - "${VAULT_PORT:-8200}:8200"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "sh", "-c", "VAULT_ADDR=http://127.0.0.1:8200 vault status >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: kafka
+    depends_on:
+      zookeeper:
+        condition: service_started
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "29092:29092"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+
   postgres:
     image: postgres:15
     container_name: postgres_db
     environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${POSTGRES_USER:-vault_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vault_password}
+      POSTGRES_DB: ${POSTGRES_DB:-predictions_db}
     ports:
       - "${DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
+    depends_on:
+      vault:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -23,21 +80,46 @@ services:
     ports:
       - "${APP_HOST_PORT:-8000}:${APP_PORT:-8000}"
     depends_on:
+      vault:
+        condition: service_healthy
       postgres:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
     environment:
       DB_HOST: ${DB_CONTAINER_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      DB_NAME: ${DB_NAME}
+      VAULT_ADDR: ${VAULT_ADDR:-http://vault:8200}
+      VAULT_TOKEN: ${VAULT_TOKEN:-root-token}
+      VAULT_SECRET_PATH: ${VAULT_SECRET_PATH:-ml-lab4/db}
+      VAULT_KV_MOUNT: ${VAULT_KV_MOUNT:-secret}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+      KAFKA_TOPIC: ${KAFKA_TOPIC:-predictions}
       APP_PORT: ${APP_PORT:-8000}
     restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+
+  consumer:
+    build: .
+    container_name: prediction_consumer
+    entrypoint: ["python", "kafka_consumer.py"]
+    depends_on:
+      vault:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      DB_HOST: ${DB_CONTAINER_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      VAULT_ADDR: ${VAULT_ADDR:-http://vault:8200}
+      VAULT_TOKEN: ${VAULT_TOKEN:-root-token}
+      VAULT_SECRET_PATH: ${VAULT_SECRET_PATH:-ml-lab4/db}
+      VAULT_KV_MOUNT: ${VAULT_KV_MOUNT:-secret}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+      KAFKA_TOPIC: ${KAFKA_TOPIC:-predictions}
+      KAFKA_GROUP_ID: ${KAFKA_GROUP_ID:-prediction-consumer}
+    restart: unless-stopped
 
 volumes:
   postgres_data:

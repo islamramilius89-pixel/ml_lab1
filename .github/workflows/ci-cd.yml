@@ -2,16 +2,19 @@ name: CI/CD Pipeline for Penguin API
 
 on:
   push:
-    branches: [ main, lab2 ]
+    branches: [main, lab2]
   pull_request:
-    branches: [ main, lab2 ]
+    branches: [main, lab2]
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"
 
 env:
-  DB_HOST: ${{ secrets.DB_HOST }}
-  DB_PORT: ${{ secrets.DB_PORT }}
-  DB_USER: ${{ secrets.DB_USER }}
-  DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-  DB_NAME: ${{ secrets.DB_NAME }}
+  PROJECT_DIR: .
+  POSTGRES_USER: ${{ secrets.DB_USER }}
+  POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
+  POSTGRES_DB: ${{ secrets.DB_NAME }}
+  VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
 
 jobs:
   build-and-test:
@@ -24,41 +27,102 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r "$PROJECT_DIR/requirements.txt"
 
       - name: Run unit tests
-        run: pytest tests/unit/
-
-      - name: Start application with PostgreSQL
-        run: docker compose up --build -d
-
-      - name: Run functional tests
         env:
-          RUN_LIVE_TESTS: "1"
-          BASE_URL: http://localhost:8000
-        run: pytest tests/functional/
+          PYTHONPATH: ${{ env.PROJECT_DIR }}
+        run: pytest "$PROJECT_DIR/tests/unit/"
 
-      - name: Stop application
-        if: always()
-        run: docker compose down -v
+  build-and-push:
+    needs: build-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Login to Docker Hub
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Build and push Docker image
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/penguin-api
         run: |
-          docker build -t "$IMAGE_NAME:${GITHUB_SHA}" -t "$IMAGE_NAME:latest" .
+          docker build -t "$IMAGE_NAME:${GITHUB_SHA}" -t "$IMAGE_NAME:latest" "$PROJECT_DIR"
           docker push "$IMAGE_NAME:${GITHUB_SHA}"
           docker push "$IMAGE_NAME:latest"
+
+  deploy-and-functional-test:
+    needs: build-and-test
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r "$PROJECT_DIR/requirements.txt"
+
+      - name: Prepare environment file
+        run: |
+          cat > "$PROJECT_DIR/.ci.env" <<EOF
+          POSTGRES_USER=${POSTGRES_USER:-gha_user}
+          POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-gha_password}
+          POSTGRES_DB=${POSTGRES_DB:-predictions_db}
+          DB_CONTAINER_HOST=postgres
+          DB_PORT=5432
+          APP_PORT=8000
+          APP_HOST_PORT=8000
+          VAULT_ADDR=http://vault:8200
+          VAULT_TOKEN=${VAULT_TOKEN:-root-token}
+          VAULT_SECRET_PATH=ml-lab4/db
+          VAULT_KV_MOUNT=secret
+          KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+          KAFKA_TOPIC=predictions
+          KAFKA_GROUP_ID=prediction-consumer
+          EOF
+
+      - name: Start containers
+        run: docker compose -f "$PROJECT_DIR/docker-compose.yml" --env-file "$PROJECT_DIR/.ci.env" up --build -d
+
+      - name: Wait for API health
+        run: |
+          for i in {1..30}; do
+            if curl -fsS http://localhost:8000/health > /dev/null; then
+              echo "API is healthy"
+              exit 0
+            fi
+            echo "Waiting for API... ($i/30)"
+            sleep 2
+          done
+          docker compose -f "$PROJECT_DIR/docker-compose.yml" --env-file "$PROJECT_DIR/.ci.env" logs app --tail 100
+          exit 1
+
+      - name: Run functional tests
+        env:
+          PYTHONPATH: ${{ env.PROJECT_DIR }}
+          RUN_LIVE_TESTS: "1"
+          BASE_URL: http://localhost:8000
+        run: python -m pytest "$PROJECT_DIR/tests/functional/"
+
+      - name: Stop containers
+        if: always()
+        run: docker compose -f "$PROJECT_DIR/docker-compose.yml" --env-file "$PROJECT_DIR/.ci.env" down -v --remove-orphans

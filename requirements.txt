@@ -4,6 +4,8 @@ fastapi
 uvicorn
 joblib
 psycopg2-binary
+hvac
+kafka-python
 python-dotenv
 pytest
 httpx

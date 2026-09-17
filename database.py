@@ -1,26 +1,31 @@
 # database.py - работа с базой данных PostgreSQL
 
-import psycopg2
 import os
 from datetime import datetime
 
-# Параметры подключения передаются только через окружение.
-def _required_env(name: str) -> str:
-    value = os.getenv(name)
-    if not value:
-        raise RuntimeError(f"Не задана переменная окружения {name}")
-    return value
+import psycopg2
+
+from secrets_store import VaultSecretError, get_db_credentials
+
+
+def _db_connection_params() -> dict[str, str]:
+    try:
+        creds = get_db_credentials()
+    except VaultSecretError as exc:
+        raise RuntimeError("Не удалось получить секреты БД из Vault") from exc
+
+    return {
+        "host": os.getenv("DB_HOST", "postgres"),
+        "port": os.getenv("DB_PORT", "5432"),
+        "user": creds["DB_USER"],
+        "password": creds["DB_PASSWORD"],
+        "dbname": creds["DB_NAME"],
+    }
 
 
 def get_connection():
     """Создаёт и возвращает подключение к базе данных."""
-    return psycopg2.connect(
-        host=_required_env("DB_HOST"),
-        port=_required_env("DB_PORT"),
-        user=_required_env("DB_USER"),
-        password=_required_env("DB_PASSWORD"),
-        dbname=_required_env("DB_NAME"),
-    )
+    return psycopg2.connect(**_db_connection_params())
 
 
 def check_connection() -> bool:
@@ -53,24 +58,26 @@ def create_table():
     conn.close()
     print("✅ Таблица predictions готова")
 
-def save_prediction(data, prediction):
-    """Сохраняет предсказание в базу данных"""
+def save_prediction(data, prediction, event_timestamp=None):
+    """Сохраняет предсказание в базу данных."""
     conn = get_connection()
     cur = conn.cursor()
-    
+
+    db_timestamp = event_timestamp or datetime.now()
+
     cur.execute("""
-        INSERT INTO predictions 
+        INSERT INTO predictions
         (culmen_length_mm, culmen_depth_mm, flipper_length_mm, body_mass_g, predicted_species, timestamp)
         VALUES (%s, %s, %s, %s, %s, %s)
     """, (
-        data.get('culmen_length_mm'),
-        data.get('culmen_depth_mm'),
-        data.get('flipper_length_mm'),
-        data.get('body_mass_g'),
+        data.get("culmen_length_mm"),
+        data.get("culmen_depth_mm"),
+        data.get("flipper_length_mm"),
+        data.get("body_mass_g"),
         prediction,
-        datetime.now()
+        db_timestamp,
     ))
-    
+
     conn.commit()
     cur.close()
     conn.close()

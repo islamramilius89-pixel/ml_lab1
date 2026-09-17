@@ -1,0 +1,111 @@
+# database.py - работа с базой данных PostgreSQL
+
+import os
+from datetime import datetime
+
+import psycopg2
+
+from secrets_store import VaultSecretError, get_db_credentials
+
+
+def _db_connection_params() -> dict[str, str]:
+    try:
+        creds = get_db_credentials()
+    except VaultSecretError as exc:
+        raise RuntimeError("Не удалось получить секреты БД из Vault") from exc
+
+    return {
+        "host": os.getenv("DB_HOST", "postgres"),
+        "port": os.getenv("DB_PORT", "5432"),
+        "user": creds["DB_USER"],
+        "password": creds["DB_PASSWORD"],
+        "dbname": creds["DB_NAME"],
+    }
+
+
+def get_connection():
+    """Создаёт и возвращает подключение к базе данных."""
+    return psycopg2.connect(**_db_connection_params())
+
+
+def check_connection() -> bool:
+    """Проверяет доступность базы данных."""
+    try:
+        with get_connection():
+            return True
+    except (OSError, psycopg2.Error, RuntimeError):
+        return False
+
+def create_table():
+    """Создаёт таблицу для хранения предсказаний (если её нет)"""
+    conn = get_connection()
+    cur = conn.cursor()
+    
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS predictions (
+            id SERIAL PRIMARY KEY,
+            culmen_length_mm FLOAT,
+            culmen_depth_mm FLOAT,
+            flipper_length_mm FLOAT,
+            body_mass_g FLOAT,
+            predicted_species VARCHAR(50),
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    conn.commit()
+    cur.close()
+    conn.close()
+    print("✅ Таблица predictions готова")
+
+def save_prediction(data, prediction):
+    """Сохраняет предсказание в базу данных"""
+    conn = get_connection()
+    cur = conn.cursor()
+    
+    cur.execute("""
+        INSERT INTO predictions 
+        (culmen_length_mm, culmen_depth_mm, flipper_length_mm, body_mass_g, predicted_species, timestamp)
+        VALUES (%s, %s, %s, %s, %s, %s)
+    """, (
+        data.get('culmen_length_mm'),
+        data.get('culmen_depth_mm'),
+        data.get('flipper_length_mm'),
+        data.get('body_mass_g'),
+        prediction,
+        datetime.now()
+    ))
+    
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def get_prediction_history(limit=10):
+    """Получает последние предсказания из базы"""
+    conn = get_connection()
+    cur = conn.cursor()
+    
+    cur.execute("""
+        SELECT culmen_length_mm, culmen_depth_mm, flipper_length_mm, body_mass_g, 
+               predicted_species, timestamp
+        FROM predictions
+        ORDER BY timestamp DESC
+        LIMIT %s
+    """, (limit,))
+    
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    
+    history = []
+    for row in rows:
+        history.append({
+            'culmen_length_mm': row[0],
+            'culmen_depth_mm': row[1],
+            'flipper_length_mm': row[2],
+            'body_mass_g': row[3],
+            'predicted_species': row[4],
+            'timestamp': str(row[5])
+        })
+    
+    return history

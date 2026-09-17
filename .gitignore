@@ -8,4 +8,5 @@ venv/
 .jenkins.env
 docker-compose.override.yml
 experiments/
+.workai/
 .DS_Store

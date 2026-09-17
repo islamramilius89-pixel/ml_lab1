@@ -141,8 +141,17 @@ docker compose --env-file .local.env down -v --remove-orphans
 3. Скрипты CI/CD:
    - `.github/workflows/ci-cd.yml`
    - `Jenkinsfile`
-4. Результаты functional-тестов (логи/скриншоты).
+4. Результаты functional-тестов:
+   - обязательно: текстовые логи успешного прогона;
+   - скриншоты: по требованию преподавателя или по желанию (для наглядности).
 5. Zip-архив актуального дистрибутива модели.
+
+## Критерии успешной демонстрации ЛР4
+- `docker compose` поднимает `vault`, `postgres`, `zookeeper`, `kafka`, `app`, `consumer`.
+- `GET /health` возвращает `200 OK`.
+- `POST /predict` возвращает предсказание и публикует событие в Kafka.
+- `consumer` читает сообщение из Kafka и сохраняет запись в PostgreSQL.
+- `GET /history` возвращает сохранённые результаты.
 
 ## Файлы, добавленные/обновлённые в ЛР4
 - `main.py` — producer.
